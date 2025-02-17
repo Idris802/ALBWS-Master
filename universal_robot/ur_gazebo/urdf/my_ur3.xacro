@@ -1,0 +1,160 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="$(arg robot_model)_robot">
+  <!--
+    This file wraps the original UR3 Gazebo model and attaches it to a cylindrical support,
+    so that the robot stands on a fixed base (like a table or pedestal).
+  -->
+
+  <!-- Declare arguments (pass through to the original macro) -->
+  <xacro:arg name="joint_limit_params" default=""/>
+  <xacro:arg name="physical_params" default=""/>
+  <xacro:arg name="kinematics_params" default=""/>
+  <xacro:arg name="visual_params" default=""/>
+  <xacro:arg name="transmission_hw_interface" default="hardware_interface/EffortJointInterface"/>
+  <xacro:arg name="safety_limits" default="false"/>
+  <xacro:arg name="safety_pos_margin" default="0.15"/>
+  <xacro:arg name="safety_k_position" default="20"/>
+
+  
+
+  <!-- Include the original UR3 Gazebo robot description -->
+  <xacro:include filename="$(find ur_gazebo)/urdf/ur_macro.xacro"/>
+  <xacro:include filename="$(find realsense2_description)/urdf/_d415.urdf.xacro"/>
+  <!-- Instantiate the UR3 robot for Gazebo -->
+  <xacro:ur_robot_gazebo
+      prefix=""
+      joint_limits_parameters_file="$(arg joint_limit_params)"
+      kinematics_parameters_file="$(arg kinematics_params)"
+      physical_parameters_file="$(arg physical_params)"
+      visual_parameters_file="$(arg visual_params)"
+      transmission_hw_interface="$(arg transmission_hw_interface)"
+      safety_limits="$(arg safety_limits)"
+      safety_pos_margin="$(arg safety_pos_margin)"
+      safety_k_position="$(arg safety_k_position)"
+  />
+
+  <!-- Define a cylinder support link -->
+  <link name="cylinder_support">
+    <visual name="cylinder_support_visual">
+      <origin xyz="0 0 0.5" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.07" length="1"/>
+      </geometry>
+    </visual>
+    <collision name="cylinder_support_collision">
+      <origin xyz="0 0 0.5" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.07" length="1"/>
+      </geometry>
+    </collision>
+    <inertial>
+      <origin xyz="0 0 0.5" rpy="0 0 0"/>
+      <mass value="5.0"/>
+      <inertia ixx="0.1" iyy="0.1" izz="0.1" ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+  </link>
+
+
+    <gazebo reference="cylinder_support">
+      <material>Gazebo/Blue</material>
+    </gazebo>
+
+    
+  <!-- Define the world link -->
+  <link name="world"/>
+
+  <!-- Attach the cylinder support to the world -->
+  <!-- For example, place the center of the cylinder at 0.4 m above the world origin -->
+  <joint name="world_to_cylinder" type="fixed">
+    <parent link="world"/>
+    <child link="cylinder_support"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Attach the robot's base to the cylinder support -->
+  <!-- This fixed joint aligns the robot's base_link with the top of the cylinder. -->
+  <joint name="cylinder_to_robot" type="fixed">
+    <parent link="cylinder_support"/>
+    <child link="base_link"/>
+    <!-- Since the cylinder is 1 m long and its center is at 0.5 m, its top is at 1 m -->
+    <!-- Offset the robot so that its base aligns with that top. Adjust as needed. -->
+    <origin xyz="0 0 1" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Optionally, if the original ur.xacro already defined a fixed joint from world to base_link,
+       you may need to override or remove that joint. In this custom file, we attach base_link to the cylinder.
+       Ensure that your launch or spawn configuration uses this composite model instead. -->
+
+  <!-- Attach the D415 camera to the UR3 end effector (tool0) -->
+
+  <xacro:include filename="$(find realsense2_description)/urdf/_d415.urdf.xacro" />
+
+
+  <xacro:sensor_d415 name="camera" topics_ns="camera" parent="base_link" publish_pointcloud="true">
+    <origin xyz="-0.365642 -0.015486 ${1.686796/3}" rpy="0 1.57 3.14"/>
+  </xacro:sensor_d415>
+
+  <link name="laser_pointer_link">
+  <visual>
+    <geometry>
+      <cylinder length="0.05" radius="0.005"/>  <!-- Simulating a small laser pointer -->
+    </geometry>
+  </visual>
+  <collision>
+    <geometry>
+      <cylinder length="0.05" radius="0.005"/>
+    </geometry>
+  </collision>
+  <inertial>
+    <mass value="0.01"/>  <!-- Lightweight mass -->
+    <inertia ixx="0.00001" ixy="0.0" ixz="0.0" iyy="0.00001" iyz="0.0" izz="0.00001"/>
+  </inertial>
+</link>
+
+<joint name="tool0_to_laser_pointer" type="fixed">
+  <parent link="tool0"/>  <!-- Attach to the UR3 end-effector -->
+  <child link="laser_pointer_link"/>
+  <origin xyz="0 0 0.025" rpy="0 0 0"/>  <!-- Adjust position as needed -->
+</joint>
+
+
+<gazebo reference="laser_pointer_link">
+  <sensor type="ray" name="laser_pointer_sensor">
+    <visualize>true</visualize>
+    <update_rate>1</update_rate>
+    <pose>0 0 0.025 0 -1.57 0</pose>  <!-- Align with the pointer -->
+    <ray>
+      <scan>
+        <horizontal>
+          <samples>1</samples>      <!-- Just a single beam -->
+          <resolution>1</resolution>
+          <min_angle>0</min_angle>
+          <max_angle>0</max_angle>
+        </horizontal>
+      </scan>
+      <range>
+        <min>0.05</min>             <!-- Min detection range -->
+        <max>5.0</max>              <!-- Max detection range -->
+        <resolution>0.01</resolution>
+      </range>
+
+    </ray>
+
+    <plugin name="gazebo_ros_laser" filename="libgazebo_ros_ray_sensor.so">
+      <ros>
+        <argument>~/out:=scan</argument>
+      </ros>
+      <output_type>/sensor_msgs/LaserScan</output_type>
+      <frame_name>laser_pointer_link</frame_name>
+    </plugin>
+
+    <plugin name="laser_control_plugin" filename="liblaser_toggle_plugin.so">
+      <topicName>/laser_pointer_toggle</topicName>
+      <frameName>laser_pointer_link</frameName>
+    </plugin>
+
+  </sensor>
+</gazebo>
+
+
+</robot>

@@ -1,0 +1,103 @@
+<?xml version="1.0" ?>
+<sdf version="1.6">
+  <model name="plant_cluster">
+    <!-- Set static to true if you don't want the cluster to be affected by physics -->
+    <static>true</static>
+    <!-- Include the nettle model -->
+    <include>
+      <uri>model://nettle</uri>
+      <pose>0 0.30 0 0 0 0</pose>
+      <name>nettle_0000</name>
+    </include>
+    <!-- Include the unknown weed model -->
+    <include>
+      <uri>model://unknown_weed</uri>
+      <pose>0 0.15 0 0 0 0</pose>
+      <name>unknown_0000</name>
+    </include>
+    <!-- You can add more <include> elements or adjust the poses as needed -->
+
+    <include>
+      <uri>model://unknown_weed</uri>
+      <pose>0 0.60 0 0 0 0</pose>
+      <name>unknown_0001</name>
+    </include>
+
+    <include>
+      <uri>model://nettle</uri>
+      <pose>0.30 0 0 0 0 0</pose>
+      <name>nettle_0001</name>
+    </include>
+
+    <include>
+      <uri>model://unknown_weed</uri>
+      <pose>0 0.45 0 0 0 0</pose>
+      <name>unknown_0002</name>
+    </include>
+
+    <include>
+      <uri>model://nettle</uri>
+      <pose>0 0 0 0 0 0</pose>
+      <name>nettle_0002</name>
+    </include>
+
+    <!-- Include the unknown weed model -->
+    <include>
+      <uri>model://unknown_weed</uri>
+      <pose>0.15 0.15 0 0 0 0</pose>
+      <name>unknown_0003</name>
+    </include>
+    <!-- You can add more <include> elements or adjust the poses as needed -->
+
+    <include>
+      <uri>model://unknown_weed</uri>
+      <pose>0.15 0.30 0 0 0 0</pose>
+      <name>unknown_0004</name>
+    </include>
+
+    <include>
+      <uri>model://nettle</uri>
+      <pose>0.15 0.45  0 0 0 0</pose>
+      <name>nettle_0003</name>
+    </include>
+
+    <include>
+      <uri>model://unknown_weed</uri>
+      <pose>0.15 0.60 0 0 0 0</pose>
+      <name>unknown_0005</name>
+    </include>
+
+    <include>
+      <uri>model://nettle</uri>
+      <pose>0.30 0.60 0 0 0 0</pose>
+      <name>nettle_0004</name>
+    </include>
+    <!-- Include the unknown weed model -->
+    <include>
+      <uri>model://unknown_weed</uri>
+      <pose>0.30 0.15 0 0 0 0</pose>
+      <name>unknown_0006</name>
+    </include>
+    <!-- You can add more <include> elements or adjust the poses as needed -->
+
+    <include>
+      <uri>model://unknown_weed</uri>
+      <pose>0.30 0.45  0 0 0 0</pose>
+      <name>unknown_0007</name>
+    </include>
+
+    <include>
+      <uri>model://nettle</uri>
+      <pose>0.30 0.30 0 0 0 0</pose>
+      <name>nettle_0005</name>
+    </include>
+
+    <include>
+      <uri>model://unknown_weed</uri>
+      <pose>0.15 0 0 0 0 0</pose>
+      <name>unknown_0008</name>
+    </include>
+
+
+  </model>
+</sdf>
