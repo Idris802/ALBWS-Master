@@ -91,7 +91,7 @@
 
 
   <xacro:sensor_d415 name="camera" topics_ns="camera" parent="base_link" publish_pointcloud="true">
-    <origin xyz="-0.365642 -0.015486 ${1.686796/3}" rpy="0 1.57 3.14"/>
+    <origin xyz="-0.4 0 0.55" rpy="0 1.57 3.14"/>
   </xacro:sensor_d415>
 
   <link name="laser_pointer_link">
