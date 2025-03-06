@@ -1,0 +1,9 @@
+material flower/Diffuse {
+    technique {
+        pass {
+            texture_unit {
+                texture Flor001.png
+            }
+        }
+    }
+}

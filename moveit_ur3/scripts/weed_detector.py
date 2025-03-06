@@ -24,7 +24,7 @@ class WeedDetectorRoot:
         # Load YOLO Model
         rospack = rospkg.RosPack()
         package_path = rospack.get_path("moveit_ur3")
-        model_path = os.path.join(package_path, "models", "best_10_roboflow.pt")
+        model_path = os.path.join(package_path, "models", "best_20.pt")
         self.model = YOLO(model_path)
 
         # Subscribers

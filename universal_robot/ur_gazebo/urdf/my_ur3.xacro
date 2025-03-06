@@ -54,7 +54,6 @@
     </inertial>
   </link>
 
-
     <gazebo reference="cylinder_support">
       <material>Gazebo/Blue</material>
     </gazebo>
@@ -64,7 +63,6 @@
   <link name="world"/>
 
   <!-- Attach the cylinder support to the world -->
-  <!-- For example, place the center of the cylinder at 0.4 m above the world origin -->
   <joint name="world_to_cylinder" type="fixed">
     <parent link="world"/>
     <child link="cylinder_support"/>
@@ -72,88 +70,82 @@
   </joint>
 
   <!-- Attach the robot's base to the cylinder support -->
-  <!-- This fixed joint aligns the robot's base_link with the top of the cylinder. -->
   <joint name="cylinder_to_robot" type="fixed">
     <parent link="cylinder_support"/>
     <child link="base_link"/>
-    <!-- Since the cylinder is 1 m long and its center is at 0.5 m, its top is at 1 m -->
-    <!-- Offset the robot so that its base aligns with that top. Adjust as needed. -->
     <origin xyz="0 0 1" rpy="0 0 0"/>
   </joint>
 
-  <!-- Optionally, if the original ur.xacro already defined a fixed joint from world to base_link,
-       you may need to override or remove that joint. In this custom file, we attach base_link to the cylinder.
-       Ensure that your launch or spawn configuration uses this composite model instead. -->
-
-  <!-- Attach the D415 camera to the UR3 end effector (tool0) -->
 
   <xacro:include filename="$(find realsense2_description)/urdf/_d415.urdf.xacro" />
-
 
   <xacro:sensor_d415 name="camera" topics_ns="camera" parent="base_link" publish_pointcloud="true">
     <origin xyz="-0.4 0 0.55" rpy="0 1.57 3.14"/>
   </xacro:sensor_d415>
 
-  <link name="laser_pointer_link">
-  <visual>
+<link name="pointer_base">
+  <visual name="pointer_base_visual">
+    <origin xyz="0 0 0.025" rpy="0 0 0"/>
     <geometry>
-      <cylinder length="0.05" radius="0.005"/>  <!-- Simulating a small laser pointer -->
+      <cylinder radius="0.02" length="0.05"/>
     </geometry>
   </visual>
-  <collision>
-    <geometry>
-      <cylinder length="0.05" radius="0.005"/>
-    </geometry>
-  </collision>
+  <collision name="pointer_base_collision">
+      <origin xyz="0 0 0.025" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.02" length="0.05"/>
+      </geometry>
+    </collision>
   <inertial>
-    <mass value="0.01"/>  <!-- Lightweight mass -->
-    <inertia ixx="0.00001" ixy="0.0" ixz="0.0" iyy="0.00001" iyz="0.0" izz="0.00001"/>
+    <mass value="0.1"/>
+    <inertia ixx="0.00002" iyy="0.000093" izz="0.000093" ixy="0" ixz="0" iyz="0"/>
   </inertial>
 </link>
 
-<joint name="tool0_to_laser_pointer" type="fixed">
-  <parent link="tool0"/>  <!-- Attach to the UR3 end-effector -->
-  <child link="laser_pointer_link"/>
-  <origin xyz="0 0 0.025" rpy="0 0 0"/>  <!-- Adjust position as needed -->
+<gazebo reference="pointer_base">
+  <material>Gazebo/Grey</material>
+</gazebo>
+
+<joint name="laser_to_eef" type="fixed">
+  <parent link="tool0"/>
+  <child link="pointer_base"/>
+  <origin xyz="0 0 0" rpy="0 0 0"/>
+</joint>
+
+<link name="laser_beam">
+  <visual name="laser_beam_visual">
+    <origin xyz="0 0 0.55" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.005" length="1.0"/>
+      </geometry>
+  </visual>
+  <inertial>
+    <mass value="0.01"/>
+    <inertia ixx="0.00002" iyy="0.000093" izz="0.000093" ixy="0" ixz="0" iyz="0"/>
+  </inertial>
+</link>
+
+<gazebo reference="laser_beam">
+  <visual name="laser_beam_visual">
+    <transparency>1.0</transparency>
+  </visual>
+  <material>Gazebo/RedGlow</material>
+</gazebo>
+
+
+<joint name="beam_to_laser" type="fixed">
+  <parent link="pointer_base"/>
+  <child link="laser_beam"/>
+  <origin xyz="0 0 0" rpy="0 0 0"/>
 </joint>
 
 
-<gazebo reference="laser_pointer_link">
-  <sensor type="ray" name="laser_pointer_sensor">
-    <visualize>true</visualize>
-    <update_rate>1</update_rate>
-    <pose>0 0 0.025 0 -1.57 0</pose>  <!-- Align with the pointer -->
-    <ray>
-      <scan>
-        <horizontal>
-          <samples>1</samples>      <!-- Just a single beam -->
-          <resolution>1</resolution>
-          <min_angle>0</min_angle>
-          <max_angle>0</max_angle>
-        </horizontal>
-      </scan>
-      <range>
-        <min>0.05</min>             <!-- Min detection range -->
-        <max>5.0</max>              <!-- Max detection range -->
-        <resolution>0.01</resolution>
-      </range>
 
-    </ray>
-
-    <plugin name="gazebo_ros_laser" filename="libgazebo_ros_ray_sensor.so">
-      <ros>
-        <argument>~/out:=scan</argument>
-      </ros>
-      <output_type>/sensor_msgs/LaserScan</output_type>
-      <frame_name>laser_pointer_link</frame_name>
-    </plugin>
-
-    <plugin name="laser_control_plugin" filename="liblaser_toggle_plugin.so">
-      <topicName>/laser_pointer_toggle</topicName>
-      <frameName>laser_pointer_link</frameName>
-    </plugin>
-
-  </sensor>
+<gazebo>
+  <plugin name="laser_pointer_controller" filename="liblaser_pointer_plugin.so">
+    <laser_link_name>laser_beam</laser_link_name>
+    <topicName>/set_laser_pointer</topicName>
+  </plugin>
 </gazebo>
 
 
