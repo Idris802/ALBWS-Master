@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+<xacro:macro name="laser_pointer" params="pointer_name parent_link">
+  <link name="${pointer_name}">
+    <visual>
+      <geometry>
+        <!-- dummy shape so link is not empty -->
+        <box size="0.0001 0.0001 0.0001"/>
+      </geometry>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </visual>
+  </link>
+
+  <joint name="${pointer_name}_joint" type="fixed">
+    <parent link="${parent_link}"/>
+    <child link="${pointer_name}"/>
+    <origin xyz="0 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <gazebo>
+    <include>
+      <!-- Reference your local SDF path (assuming your package is found) -->
+      <uri>file://$(find laser_pointer_plugin)/models/laser_pointer.sdf</uri>
+      <name>${pointer_name}</name>
+      <pose>0 0 0 0 0 0</pose>
+    </include>
+  </gazebo>
+</xacro:macro>
+</robot>

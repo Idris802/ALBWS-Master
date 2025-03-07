@@ -1,0 +1,11 @@
+<launch>
+  <!-- Launch an empty Gazebo world with ROS integration -->
+  <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <!-- (Optional) Set use_sim_time to true to use Gazebo's simulation clock -->
+    <arg name="use_sim_time" value="true"/>
+  </include>
+  <!-- Spawn the laser pointer model into Gazebo -->
+  <node name="spawn_laser" pkg="gazebo_ros" type="spawn_model" output="screen"
+        args="-file $(find laser_pointer_plugin)/models/laser_pointer.sdf -sdf -model laser_pointer -x 0 -y 0 -z 0.1"/>
+</launch>
+

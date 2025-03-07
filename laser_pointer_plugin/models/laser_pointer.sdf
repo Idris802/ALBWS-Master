@@ -1,0 +1,75 @@
+<?xml version="1.0" ?>
+<sdf version="1.6">
+  <model name="laser_pointer">
+    <!-- Make the model static (it won't fall or move under gravity) -->
+    <static>true</static>
+    <!-- Pointer base link (e.g., handle of the laser pointer) -->
+    <link name="pointer_base">
+      <pose>0 0 0 0 1.5708 0</pose>  <!-- oriented along X axis -->
+      <visual name="pointer_body_visual">
+        <geometry>
+          <!-- Small cylinder as pointer body, 0.1m length, 0.04m diameter -->
+          <cylinder>
+            <radius>0.02</radius>
+            <length>0.1</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.3 0.3 0.3 1</ambient>
+          <diffuse>0.4 0.4 0.4 1</diffuse>
+          <specular>0.1 0.1 0.1 1</specular>
+        </material>
+      </visual>
+      <!-- Inertial (not critical since static, but provided for completeness) -->
+      <inertial>
+        <mass>0.1</mass>
+        <inertia>
+          <ixx>0.00002</ixx> <iyy>0.000093</iyy> <izz>0.000093</izz>
+          <ixy>0.0</ixy> <ixz>0.0</ixz> <iyz>0.0</iyz>
+        </inertia>
+      </inertial>
+    </link>
+    <!-- Laser beam link (initially invisible thin cylinder) -->
+    <link name="laser_beam">
+      <!-- Position the beam in front of the base; rotate it to point along X axis -->
+      <pose>0.55 0 0 0 1.5708 0</pose>  <!-- 0.55m in front of base, horizontal -->
+      <visual name="beam_visual">
+        <geometry>
+          <!-- Thin cylinder ~1m length to represent laser beam -->
+          <cylinder>
+            <radius>0.005</radius>
+            <length>1.0</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <!-- Bright red color for the laser -->
+          <ambient>1 0 0 1</ambient>
+          <diffuse>1 0 0 1</diffuse>
+          <specular>0.1 0.1 0.1 1</specular>
+          <emissive>1 0 0 1</emissive>
+        </material>
+        <!-- Start with laser invisible -->
+        <transparency>1.0</transparency>
+      </visual>
+      <inertial>
+        <mass>0.01</mass>
+        <inertia>
+          <ixx>1.25e-07</ixx> <iyy>8.33e-04</iyy> <izz>8.33e-04</izz>
+          <ixy>0.0</ixy> <ixz>0.0</ixz> <iyz>0.0</iyz>
+        </inertia>
+      </inertial>
+    </link>
+    <!-- Fixed joint attaching laser_beam to pointer_base so they move together -->
+    <joint name="fixed_joint" type="fixed">
+      <parent>pointer_base</parent>
+      <child>laser_beam</child>
+    </joint>
+
+    <!-- Include the laser pointer plugin -->
+    <plugin name="laser_pointer_controller" filename="liblaser_pointer_plugin.so">
+      <!-- Tell the plugin which link to treat as the laser beam -->
+      <laser_link_name>laser_beam</laser_link_name>
+    </plugin>
+  </model>
+</sdf>
+

@@ -1,0 +1,26 @@
+<package format="2">
+  <name>laser_pointer_plugin</name>
+  <version>0.1.0</version>
+  <description>Gazebo model plugin for a ROS-controlled laser pointer</description>
+  <maintainer email="you@example.com">Your Name</maintainer>
+  <license>MIT</license>
+
+  <!-- Existing dependencies -->
+  <buildtool_depend>catkin</buildtool_depend>
+  <build_depend>roscpp</build_depend>
+  <build_depend>std_msgs</build_depend>
+  <build_depend>gazebo_dev</build_depend>
+
+  <!-- Add the missing build_depend for gazebo_ros -->
+  <build_depend>gazebo_ros</build_depend>
+
+  <!-- For runtime usage, also add an exec_depend (or use run_depend) -->
+  <exec_depend>roscpp</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>gazebo_ros</exec_depend>
+
+  <export>
+    <gazebo_ros plugin_path="${prefix}/lib"/>
+  </export>
+</package>
+
