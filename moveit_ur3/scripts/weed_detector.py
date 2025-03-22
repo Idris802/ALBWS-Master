@@ -53,7 +53,6 @@ class WeedDetectorRoot:
         ])
         rospy.loginfo_once("Camera intrinsics: fx={:.2f}, fy={:.2f}, cx={:.2f}, cy={:.2f}".format(fx, fy, cx, cy))
 
-
     def camera_info_callback(self, msg):
         """ Store camera intrinsics from /camera/color/camera_info. """
         fx = msg.K[0]
@@ -66,6 +65,7 @@ class WeedDetectorRoot:
             [ 0,  0,  1]
         ])
         rospy.loginfo_once("Camera intrinsics: fx={:.2f}, fy={:.2f}, cx={:.2f}, cy={:.2f}".format(fx, fy, cx, cy))
+
 
     def pixel_to_world(self, u, v, depth):
         if self.camera_matrix is None:
@@ -98,22 +98,24 @@ class WeedDetectorRoot:
     def depth_callback(self, msg):
         self.latest_depth = self.bridge.imgmsg_to_cv2(msg, desired_encoding="passthrough")
 
-    def ransac(self, d):
+    def ransac(self, d, x1, y1):
         if d.dtype != np.float32:
             d = d.astype(np.float32)
         d_meters = d / 1000.0
         depth_o3d = o3d.geometry.Image(d_meters)
-        width = d_meters.shape[1]
-        height = d_meters.shape[0]
+        width = d_meters.shape[1] 
+        height = d_meters.shape[0] 
         fx = self.camera_matrix_depth[0, 0]
         fy = self.camera_matrix_depth[1, 1]
-        cx = self.camera_matrix_depth[0, 2]
-        cy = self.camera_matrix_depth[1, 2]
+        cx = self.camera_matrix_depth[0, 2] - x1 
+        cy = self.camera_matrix_depth[1, 2] - y1
         intrinsic = o3d.camera.PinholeCameraIntrinsic(width, height, fx, fy, cx, cy)
         depth_scale = 1
         depth_trunc = 1.0
-        pcd = o3d.geometry.PointCloud.create_from_depth_image(depth_o3d, intrinsic, depth_scale=depth_scale, depth_trunc=depth_trunc, stride=1)
-
+        pcd = o3d.geometry.PointCloud.create_from_depth_image(depth_o3d, intrinsic,
+                                                              depth_scale=depth_scale,
+                                                              depth_trunc=depth_trunc, 
+                                                              stride=1)
         distance_threshold = 0.002 
         ransac_n = 3             
         num_iterations = 1000
@@ -148,6 +150,22 @@ class WeedDetectorRoot:
 
         o3d.visualization.draw_geometries([weed_cloud, sphere])
 
+    def color_pixel_to_depth_pixel(self, u_color, v_color, depth_value, K_color, K_depth):
+        self.listener.waitForTransform('/camera_depth_optical_frame', '/camera_color_optical_frame', rospy.Time(0), rospy.Duration(3.0))
+        (trans, rot) = self.listener.lookupTransform('/camera_depth_optical_frame', '/camera_color_optical_frame', rospy.Time(0))
+        R = tfm.quaternion_matrix(rot)[:3, :3] 
+        T = np.array(trans)  
+        x_norm = (u_color - K_color[0,2]) / K_color[0,0]
+        y_norm = (v_color - K_color[1,2]) / K_color[1,1]
+
+        point_color = np.array([x_norm * depth_value, y_norm * depth_value, depth_value])
+        point_depth = R.dot(point_color) + T
+        
+        u_depth = (K_depth[0,0] * point_depth[0] / point_depth[2]) + K_depth[0,2]
+        v_depth = (K_depth[1,1] * point_depth[1] / point_depth[2]) + K_depth[1,2]
+        
+        return int(round(u_depth)), int(round(v_depth))
+
     def image_callback(self, msg):
         if self.latest_depth is None:
             rospy.logwarn("No depth data yet, skipping detection.")
@@ -162,15 +180,15 @@ class WeedDetectorRoot:
                 x2 = min(cv_image.shape[1], x2); y2 = min(cv_image.shape[0], y2)
                 if x2 <= x1 or y2 <= y1:
                     continue
-
-                roi_depth = self.latest_depth[y1:y2, x1:x2].copy()
-                if roi_depth.any() > 10:
-                    roi_depth = roi_depth / 1000.0
                 
-                #self.ransac(roi_depth)
-                print("!!!!!!!!!!!!!!1", self.latest_depth.shape)
-                print("!!!!!!!!!!!!!!1", roi_depth.shape)
+                roi_depth = self.latest_depth[y1:y2, x1:x2].copy()
+                
+                d = self.latest_depth # this works  
+                #self.ransac(roi_depth, x1, y1, x2, y2) # This does not
+                if roi_depth.dtype != np.float32:
+                    roi_depth = roi_depth.astype(np.float32)
 
+                
                 u = (x1 + x2) // 2 
                 v = (y1 + y2) // 2 
 
@@ -180,7 +198,18 @@ class WeedDetectorRoot:
                 if depth_value <= 0:
                     rospy.logwarn("Invalid depth at weed centroid.")
                     continue
+
+                corners_color = [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]
+                corners_depth = [self.color_pixel_to_depth_pixel(u, v, depth_value,
+                                             self.camera_matrix, self.camera_matrix_depth,)
+                                for (u, v) in corners_color]
                 
+                us, vs = zip(*corners_depth)
+                u_depth_min, u_depth_max = min(us), max(us)
+                v_depth_min, v_depth_max = min(vs), max(vs)
+                roi_depth_aligned = self.latest_depth[v_depth_min:v_depth_max, u_depth_min:u_depth_max].copy()
+                self.ransac(roi_depth_aligned, u_depth_min, v_depth_min)
+
                 X_cam, Y_cam, Z_cam = self.pixel_to_world(u, v, depth_value)
 
                 x_base, y_base, z_base = self.transform_camera_to_base(X_cam, Y_cam, Z_cam)
@@ -199,16 +228,12 @@ class WeedDetectorRoot:
                 text = "X:{:.2f} Y:{:.2f} Z:{:.2f}".format(x_base, y_base, z_base)
                 cv2.putText(cv_image, text, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 2)
 
-                max_depth = 3.0 
-                roi_depth_clipped = np.clip(roi_depth, 0, max_depth)
-                roi_depth_norm = cv2.normalize(roi_depth_clipped, None, 0, 255, cv2.NORM_MINMAX)
+                roi_depth_norm = cv2.normalize(roi_depth_aligned, None, 0, 255, cv2.NORM_MINMAX)
                 roi_depth_norm = roi_depth_norm.astype(np.uint8)
 
-                roi_depth_colored = cv2.applyColorMap(roi_depth_norm, cv2.COLORMAP_JET)
 
-                
             cv2.imshow("Weed Detection", cv_image)
-            cv2.imshow("roi", roi_depth_colored)
+            cv2.imshow("roi", roi_depth_norm)
             cv2.waitKey(1)
 
     def run(self):
