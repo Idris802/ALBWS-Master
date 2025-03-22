@@ -13,11 +13,10 @@ import math
 import tf.transformations as tfm
 import geometry_msgs.msg
 import numpy as np
+
 from geometry_msgs.msg import PointStamped, PoseStamped
-
 from math import pi, tau, dist, fabs, cos
-
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool
 from moveit_commander.conversions import pose_to_list
 
 
@@ -54,22 +53,10 @@ print("============ Printing robot state")
 print(robot.get_current_state())
 print("")
 
+laser_pub = rospy.Publisher("/set_laser_pointer", Bool, queue_size=10)
 
-print("Moving to Home position!")
-
-
-current_pose_stamped = move_group.get_current_pose()
-
-
-home_position = [-0.08987249676046005, -1.513799495494775, -1.563427913618015, -1.6978510331504433, 1.5968145769242623, -0.08069322207556606]
-move_group.go(home_position, wait="true")
-move_group.stop()
-
-
-import numpy as np
-import tf.transformations as tfm
-import math
-
+weed_positions = []
+subscriber = None
 
 def quaternion_from_vectors(v0, v1):
     v0 = v0 / np.linalg.norm(v0)
@@ -127,6 +114,7 @@ def reorient_end_effector(weed_coords):
         rospy.logwarn("End effector reorientation failed.")
 
 
+
 def move_robot_to_target(x, y, z):
 
     # Define the target pose
@@ -146,6 +134,7 @@ def move_robot_to_target(x, y, z):
     # Set pose target
     move_group.set_pose_target(target_pose)
     move_group.set_planning_time(50.0)
+
     # Plan and execute motion
     plan = move_group.go(wait=True)
     move_group.stop()
@@ -156,21 +145,43 @@ def move_robot_to_target(x, y, z):
     else:
         rospy.logwarn("Motion planning failed!")
 
+
 def weed_callback(msg):
+    global weed_positions, subscriber
     rospy.loginfo("Received weed coordinates: X = {:.3f}, Y = {:.3f}, Z = {:.3f}".format(msg.point.x, msg.point.y, msg.point.z))
     home_position = [-0.08987249676046005, -1.513799495494775, -1.563427913618015, -1.6978510331504433, 1.5968145769242623, -0.08069322207556606]
     move_group.go(home_position, wait="true")
     move_group.stop()
-    move_robot_to_target(msg.point.x, msg.point.y, 1.04)
+    if len(weed_positions) < 6:
+        weed_positions.append([msg.point.x, msg.point.y, msg.point.z])
+
+    if len(weed_positions) >= 6 and subscriber is not None:
+        subscriber.unregister()
+        rospy.loginfo("Collected 6 weed positions. Unsubscribing from /weed_coordinates.")
+        rospy.loginfo("Weed positions: {}".format(weed_positions))
+
+        for pos in weed_positions:
+            
+            move_robot_to_target(pos[0], pos[1], 1.02)
+            #reorient_end_effector([pos[0], pos[1], pos[2]])
+            laser_pub.publish(Bool(data=True))
+            rospy.loginfo("Laser turned ON at weed position: {}".format(pos))
+            rospy.sleep(2.0)
+            laser_pub.publish(Bool(data=False))
+            rospy.loginfo("Laser turned OFF")
+            rospy.sleep(2.0) 
 
 
 if __name__ == "__main__":
     moveit_commander.roscpp_initialize([])
-    # Example weed coordinates in the base frame
-    weed_coordinates = [-0.41, -0.11, 0.9]
-    #reorient_end_effector(weed_coordinates)
-    
-    #rospy.Subscriber("/weed_coordinates", PointStamped, weed_callback)
+    home_position = [0, 0, 0, 0, 0, 0]
+    move_group.go(home_position, wait="true")
+    move_group.stop()
+    # -0.45, -0.10
+    move_robot_to_target(-0.3314335730153157, -0.011890768755567932, 1.04)
+    #laser_pub.publish(Bool(data=True))
+
+    #subscriber = rospy.Subscriber("/weed_coordinates", PointStamped, weed_callback)
     #rospy.spin()
 
-    #move_robot_to_target(-0.51+0.07, 0.33, 1.04)
+    

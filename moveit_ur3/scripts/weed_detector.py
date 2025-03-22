@@ -3,16 +3,18 @@
 import rospy
 import cv2
 import numpy as np
+import open3d as o3d
 import rospkg
 import os
+import tf
+import tf.transformations as tfm
 
 from sensor_msgs.msg import Image, CameraInfo
 from geometry_msgs.msg import PointStamped
 from cv_bridge import CvBridge
 from ultralytics import YOLO
+from scipy import ndimage
 
-import tf
-import tf.transformations as tfm
 
 class WeedDetectorRoot:
     def __init__(self):
@@ -20,22 +22,37 @@ class WeedDetectorRoot:
 
         self.bridge = CvBridge()
         self.camera_matrix = None
+        self.camera_matrix_depth = None
 
-        # Load YOLO Model
         rospack = rospkg.RosPack()
         package_path = rospack.get_path("moveit_ur3")
-        model_path = os.path.join(package_path, "models", "best_20.pt")
+        model_path = os.path.join(package_path, "models", "best_10.pt")
         self.model = YOLO(model_path)
 
-        # Subscribers
         self.color_sub = rospy.Subscriber("/camera/color/image_raw", Image, self.image_callback)
         self.depth_sub = rospy.Subscriber("/camera/depth/image_raw", Image, self.depth_callback)
+        #self.depth_sub = rospy.Subscriber("/camera/image_rect", Image, self.depth_callback)
         self.camera_info_sub = rospy.Subscriber("/camera/color/camera_info", CameraInfo, self.camera_info_callback)
-
+        self.caemera_info_depth_sub = rospy.Subscriber("/camera/depth/camera_info", CameraInfo, 
+                                                        self.camera_info_depth_callback)
         self.latest_depth = None
         self.listener = tf.TransformListener()
 
         self.weed_pub = rospy.Publisher("/weed_coordinates", PointStamped, queue_size=10)
+
+    def camera_info_depth_callback(self, msg):
+        """ Store camera intrinsics from /camera/color/camera_info. """
+        fx = msg.K[0]
+        fy = msg.K[4]
+        cx = msg.K[2]
+        cy = msg.K[5]
+        self.camera_matrix_depth = np.array([
+            [fx,  0, cx],
+            [ 0, fy, cy],
+            [ 0,  0,  1]
+        ])
+        rospy.loginfo_once("Camera intrinsics: fx={:.2f}, fy={:.2f}, cx={:.2f}, cy={:.2f}".format(fx, fy, cx, cy))
+
 
     def camera_info_callback(self, msg):
         """ Store camera intrinsics from /camera/color/camera_info. """
@@ -51,7 +68,6 @@ class WeedDetectorRoot:
         rospy.loginfo_once("Camera intrinsics: fx={:.2f}, fy={:.2f}, cx={:.2f}, cy={:.2f}".format(fx, fy, cx, cy))
 
     def pixel_to_world(self, u, v, depth):
-        """ Convert (u, v, depth) to (X, Y, Z) in camera frame using the pinhole model. """
         if self.camera_matrix is None:
             rospy.logwarn("Camera intrinsics not received yet!")
             return None, None, None
@@ -67,10 +83,9 @@ class WeedDetectorRoot:
         return X, Y, Z
 
     def transform_camera_to_base(self, x_cam, y_cam, z_cam):
-        """ Transform a 3D point from camera_color_optical_frame to base_link. """
         try:
-            self.listener.waitForTransform('/base_link', '/camera_color_optical_frame', rospy.Time(0), rospy.Duration(3.0))
-            (trans, rot) = self.listener.lookupTransform('/base_link', '/camera_color_optical_frame', rospy.Time(0))
+            self.listener.waitForTransform('/base_link', '/camera_depth_optical_frame', rospy.Time(0), rospy.Duration(3.0))
+            (trans, rot) = self.listener.lookupTransform('/base_link', '/camera_depth_optical_frame', rospy.Time(0))
 
             cam_point = np.array([x_cam, y_cam, z_cam, 1])
             transform_matrix = tfm.concatenate_matrices(tfm.translation_matrix(trans), tfm.quaternion_matrix(rot))
@@ -81,98 +96,127 @@ class WeedDetectorRoot:
             return None, None, None
 
     def depth_callback(self, msg):
-        """ Store the latest depth frame. """
         self.latest_depth = self.bridge.imgmsg_to_cv2(msg, desired_encoding="passthrough")
 
+    def ransac(self, d):
+        if d.dtype != np.float32:
+            d = d.astype(np.float32)
+        d_meters = d / 1000.0
+        depth_o3d = o3d.geometry.Image(d_meters)
+        width = d_meters.shape[1]
+        height = d_meters.shape[0]
+        fx = self.camera_matrix_depth[0, 0]
+        fy = self.camera_matrix_depth[1, 1]
+        cx = self.camera_matrix_depth[0, 2]
+        cy = self.camera_matrix_depth[1, 2]
+        intrinsic = o3d.camera.PinholeCameraIntrinsic(width, height, fx, fy, cx, cy)
+        depth_scale = 1
+        depth_trunc = 1.0
+        pcd = o3d.geometry.PointCloud.create_from_depth_image(depth_o3d, intrinsic, depth_scale=depth_scale, depth_trunc=depth_trunc, stride=1)
+
+        distance_threshold = 0.002 
+        ransac_n = 3             
+        num_iterations = 1000
+
+        plane_model, inliers = pcd.segment_plane(distance_threshold, ransac_n, num_iterations)
+        [a, b, c, d_coeff] = plane_model
+        print(f"Ground plane model: {a:.3f}x + {b:.3f}y + {c:.3f}z + {d_coeff:.3f} = 0")
+
+        ground_plane = pcd.select_by_index(inliers)
+        ground_plane.paint_uniform_color([0.0, 1.0, 0.0]) 
+        weed_cloud = pcd.select_by_index(inliers, invert=True)
+        weed_cloud.paint_uniform_color([1.0, 0.0, 0.0])  
+
+        o3d.visualization.draw_geometries([ground_plane, weed_cloud])
+
+        weed_points = np.asarray(weed_cloud.points)
+
+        distances = np.abs(a * weed_points[:, 0] + b * weed_points[:, 1] +
+                    c * weed_points[:, 2] + d_coeff)
+
+        stem_index = np.argmin(distances)
+        stem_point = weed_points[stem_index] 
+        print("Estimated stem base (in camera frame):", stem_point)
+        x_base, y_base, z_base = self.transform_camera_to_base(stem_point[0], 
+                                                               stem_point[1],
+                                                               stem_point[2])
+        print("Estimated stem base (in Base frame):", x_base, y_base, z_base)
+
+        sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.005)
+        sphere.translate(stem_point)
+        sphere.paint_uniform_color([0.0, 0.0, 1.0])  
+
+        o3d.visualization.draw_geometries([weed_cloud, sphere])
+
     def image_callback(self, msg):
-        """ Detect weeds, refine root location using depth, and publish 3D coords. """
         if self.latest_depth is None:
             rospy.logwarn("No depth data yet, skipping detection.")
             return
 
         cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
         results = self.model(cv_image)
-
         for r in results:
             for box in r.boxes:
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
-                # Ensure bounding box is within image bounds
                 x1 = max(0, x1); y1 = max(0, y1)
                 x2 = min(cv_image.shape[1], x2); y2 = min(cv_image.shape[0], y2)
                 if x2 <= x1 or y2 <= y1:
                     continue
 
-                # Extract ROI in the depth image
                 roi_depth = self.latest_depth[y1:y2, x1:x2].copy()
-                # Convert mm to m if needed
                 if roi_depth.any() > 10:
                     roi_depth = roi_depth / 1000.0
+                
+                #self.ransac(roi_depth)
+                print("!!!!!!!!!!!!!!1", self.latest_depth.shape)
+                print("!!!!!!!!!!!!!!1", roi_depth.shape)
 
-                # 1) Find the maximum depth in the bounding box (assuming camera points downward)
-                max_depth = np.nanmax(roi_depth)
-                if np.isnan(max_depth) or max_depth <= 0:
-                    rospy.logwarn("No valid depth in bounding box.")
-                    continue
+                u = (x1 + x2) // 2 
+                v = (y1 + y2) // 2 
 
-                # 2) Create a mask of pixels near that max depth (say, within 1 cm).
-                threshold = 0.05  # 1 cm threshold
-                mask = np.zeros_like(roi_depth, dtype=np.uint8)
-                mask[np.abs(roi_depth - max_depth) < threshold] = 255
-
-                # 3) Compute centroid of that mask
-                M = cv2.moments(mask)
-                if M["m00"] == 0:
-                    rospy.logwarn("No centroid found in the root mask.")
-                    continue
-                centroid_u = int(M["m10"] / M["m00"])
-                centroid_v = int(M["m01"] / M["m00"])
-
-                # Convert local ROI coordinates to full image coordinates
-                u = x1 + centroid_u
-                v = y1 + centroid_v
-
-                # 4) Retrieve depth at the centroid
                 depth_value = self.latest_depth[v, u]
                 if depth_value > 10:
-                    depth_value /= 1000.0  # mm to meters
+                    depth_value /= 1000.0 
                 if depth_value <= 0:
                     rospy.logwarn("Invalid depth at weed centroid.")
                     continue
-
-                # 5) Convert to camera frame
+                
                 X_cam, Y_cam, Z_cam = self.pixel_to_world(u, v, depth_value)
-                rospy.loginfo("Weed root in Camera Frame: X={:.3f}, Y={:.3f}, Z={:.3f}".format(X_cam, Y_cam, Z_cam))
 
-                # 6) Transform to base frame
                 x_base, y_base, z_base = self.transform_camera_to_base(X_cam, Y_cam, Z_cam)
                 if x_base is not None:
                     rospy.loginfo("Weed root in Base Frame: X={:.3f}, Y={:.3f}, Z={:.3f}".format(x_base, y_base, z_base))
-
-                    # Publish weed coordinates
                     weed_msg = PointStamped()
                     weed_msg.header.stamp = rospy.Time.now()
-                    weed_msg.header.frame_id = "base_link"
+                    weed_msg.header.frame_id = "world"
                     weed_msg.point.x = x_base
                     weed_msg.point.y = y_base
                     weed_msg.point.z = z_base
                     self.weed_pub.publish(weed_msg)
 
-                # Draw bounding box and centroid for visualization
                 cv2.rectangle(cv_image, (x1, y1), (x2, y2), (255, 0, 0), 2)
                 cv2.circle(cv_image, (u, v), 4, (0, 0, 255), -1)
-
                 text = "X:{:.2f} Y:{:.2f} Z:{:.2f}".format(x_base, y_base, z_base)
-                # Position the text above the bounding box
                 cv2.putText(cv_image, text, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 2)
 
+                max_depth = 3.0 
+                roi_depth_clipped = np.clip(roi_depth, 0, max_depth)
+                roi_depth_norm = cv2.normalize(roi_depth_clipped, None, 0, 255, cv2.NORM_MINMAX)
+                roi_depth_norm = roi_depth_norm.astype(np.uint8)
 
+                roi_depth_colored = cv2.applyColorMap(roi_depth_norm, cv2.COLORMAP_JET)
 
-        cv2.imshow("Weed Detection", cv_image)
-        cv2.waitKey(1)
+                
+            cv2.imshow("Weed Detection", cv_image)
+            cv2.imshow("roi", roi_depth_colored)
+            cv2.waitKey(1)
 
     def run(self):
         rospy.spin()
 
 if __name__ == "__main__":
     node = WeedDetectorRoot()
+    #print(node.transform_camera_to_base( 0.15472,     0.39979,       0.572))
+    
     node.run()
+    # [    0.15472, -0.39979,  -0.572]
