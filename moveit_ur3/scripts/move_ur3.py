@@ -13,12 +13,13 @@ import math
 import tf.transformations as tfm
 import geometry_msgs.msg
 import numpy as np
+import matplotlib.pyplot as plt
 
 from geometry_msgs.msg import PointStamped, PoseStamped
 from math import pi, tau, dist, fabs, cos
 from std_msgs.msg import String, Bool
 from moveit_commander.conversions import pose_to_list
-
+from sensor_msgs.msg import JointState
 
 moveit_commander.roscpp_initialize(sys.argv)
 rospy.init_node("move_group_ur3_interface", anonymous=True)
@@ -57,6 +58,9 @@ laser_pub = rospy.Publisher("/set_laser_pointer", Bool, queue_size=10)
 
 weed_positions = []
 subscriber = None
+
+joint_state_times = []
+joint_state_positions = {}  
 
 def quaternion_from_vectors(v0, v1):
     v0 = v0 / np.linalg.norm(v0)
@@ -161,7 +165,6 @@ def weed_callback(msg):
         rospy.loginfo("Weed positions: {}".format(weed_positions))
 
         for pos in weed_positions:
-            
             move_robot_to_target(pos[0], pos[1], 1.02)
             #reorient_end_effector([pos[0], pos[1], pos[2]])
             laser_pub.publish(Bool(data=True))
@@ -171,16 +174,77 @@ def weed_callback(msg):
             rospy.loginfo("Laser turned OFF")
             rospy.sleep(2.0) 
 
+def joint_state_callback(msg):
+    global joint_state_times, joint_state_positions
+    t = msg.header.stamp.to_sec()
+    joint_state_times.append(t)
+    for i, name in enumerate(msg.name):
+        if name not in joint_state_positions:
+            joint_state_positions[name] = []
+        joint_state_positions[name].append(msg.position[i])
+
+def plot_joint_states():
+    """
+    Plot joint positions over time using the collected joint state data.
+    """
+    # Find the minimum number of data points collected
+    min_length = len(joint_state_times)
+    for positions in joint_state_positions.values():
+        if len(positions) < min_length:
+            min_length = len(positions)
+    
+    if min_length == 0:
+        rospy.logwarn("No joint state data collected!")
+        return
+
+    # Normalize time data so that it starts at 0
+    times = np.array(joint_state_times[:min_length]) - joint_state_times[0]
+    
+    plt.figure(figsize=(10, 6))
+    for joint, positions in joint_state_positions.items():
+        plt.plot(times, positions[:min_length], label=joint)
+    
+    plt.xlabel("Time (s)")
+    plt.ylabel("Joint Position (rad)")
+    plt.title("Joint States Over Time (Simulated Annealing TSP)")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
 
 if __name__ == "__main__":
     moveit_commander.roscpp_initialize([])
     home_position = [0, 0, 0, 0, 0, 0]
+    #move_group.go(home_position, wait="true")
+    #move_group.stop()
+
+    home_position = [-0.08987249676046005, -1.513799495494775, -1.563427913618015, -1.6978510331504433, 1.5968145769242623, -0.08069322207556606]
     move_group.go(home_position, wait="true")
     move_group.stop()
+    rospy.sleep(4.0)
+
     # -0.45, -0.10
-    move_robot_to_target(-0.3314335730153157, -0.011890768755567932, 1.04)
+    #move_robot_to_target(-0.3314335730153157, -0.011890768755567932, 1.04)
     #laser_pub.publish(Bool(data=True))
 
+    ransac_l = [(-0.3738729799137606, -0.29980112826021416), (-0.2473369637210849, -0.17858211467646673), (-0.3343023651160801, -0.009476697317997872), (-0.29961311623030135, 0.21202017955604452), (-0.44859124935707373, 0.17697553961075976), (-0.45812922704991776, -0.14543003269053853)]
+
+    joint_state_sub = rospy.Subscriber("/joint_states", JointState, joint_state_callback)
+    
+    for tp in ransac_l:
+        x, y = tp
+        move_robot_to_target(x, y, 1.02)
+        laser_pub.publish(Bool(data=True))
+        rospy.loginfo("Laser turned ON at weed position: {}".format(tp))
+        rospy.sleep(0.2)
+        laser_pub.publish(Bool(data=False))
+        rospy.loginfo("Laser turned OFF")
+        #rospy.sleep(.5)
+    
+
+    joint_state_sub.unregister()
+    plot_joint_states()
+   
     #subscriber = rospy.Subscriber("/weed_coordinates", PointStamped, weed_callback)
     #rospy.spin()
 

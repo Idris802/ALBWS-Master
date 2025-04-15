@@ -1,0 +1,9 @@
+material plant_pot/Diffuse {
+    technique {
+        pass {
+            texture_unit {
+                texture flowering_pot.png
+            }
+        }
+    }
+}

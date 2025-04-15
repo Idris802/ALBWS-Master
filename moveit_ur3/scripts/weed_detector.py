@@ -8,6 +8,7 @@ import rospkg
 import os
 import tf
 import tf.transformations as tfm
+import time
 
 from sensor_msgs.msg import Image, CameraInfo
 from geometry_msgs.msg import PointStamped
@@ -26,12 +27,11 @@ class WeedDetectorRoot:
 
         rospack = rospkg.RosPack()
         package_path = rospack.get_path("moveit_ur3")
-        model_path = os.path.join(package_path, "models", "best_10.pt")
+        model_path = os.path.join(package_path, "models", "best_20.pt")
         self.model = YOLO(model_path)
 
         self.color_sub = rospy.Subscriber("/camera/color/image_raw", Image, self.image_callback)
         self.depth_sub = rospy.Subscriber("/camera/depth/image_raw", Image, self.depth_callback)
-        #self.depth_sub = rospy.Subscriber("/camera/image_rect", Image, self.depth_callback)
         self.camera_info_sub = rospy.Subscriber("/camera/color/camera_info", CameraInfo, self.camera_info_callback)
         self.caemera_info_depth_sub = rospy.Subscriber("/camera/depth/camera_info", CameraInfo, 
                                                         self.camera_info_depth_callback)
@@ -39,6 +39,12 @@ class WeedDetectorRoot:
         self.listener = tf.TransformListener()
 
         self.weed_pub = rospy.Publisher("/weed_coordinates", PointStamped, queue_size=10)
+
+        self.preprocess_times = []
+        self.inference_times = []
+        self.postprocess_times = []
+        self.num_weeds_list = []
+        self.average_interval = 500
 
     def camera_info_depth_callback(self, msg):
         """ Store camera intrinsics from /camera/color/camera_info. """
@@ -116,39 +122,37 @@ class WeedDetectorRoot:
                                                               depth_scale=depth_scale,
                                                               depth_trunc=depth_trunc, 
                                                               stride=1)
-        distance_threshold = 0.002 
+        distance_threshold = 0.004 
         ransac_n = 3             
         num_iterations = 1000
 
         plane_model, inliers = pcd.segment_plane(distance_threshold, ransac_n, num_iterations)
         [a, b, c, d_coeff] = plane_model
-        print(f"Ground plane model: {a:.3f}x + {b:.3f}y + {c:.3f}z + {d_coeff:.3f} = 0")
 
         ground_plane = pcd.select_by_index(inliers)
         ground_plane.paint_uniform_color([0.0, 1.0, 0.0]) 
         weed_cloud = pcd.select_by_index(inliers, invert=True)
         weed_cloud.paint_uniform_color([1.0, 0.0, 0.0])  
-
-        o3d.visualization.draw_geometries([ground_plane, weed_cloud])
-
         weed_points = np.asarray(weed_cloud.points)
+        
+        #o3d.visualization.draw_geometries([ground_plane, weed_cloud])
 
         distances = np.abs(a * weed_points[:, 0] + b * weed_points[:, 1] +
                     c * weed_points[:, 2] + d_coeff)
 
         stem_index = np.argmin(distances)
         stem_point = weed_points[stem_index] 
-        print("Estimated stem base (in camera frame):", stem_point)
         x_base, y_base, z_base = self.transform_camera_to_base(stem_point[0], 
                                                                stem_point[1],
                                                                stem_point[2])
-        print("Estimated stem base (in Base frame):", x_base, y_base, z_base)
 
         sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.005)
         sphere.translate(stem_point)
         sphere.paint_uniform_color([0.0, 0.0, 1.0])  
 
-        o3d.visualization.draw_geometries([weed_cloud, sphere])
+        #o3d.visualization.draw_geometries([weed_cloud, sphere])
+
+        return x_base, y_base, z_base
 
     def color_pixel_to_depth_pixel(self, u_color, v_color, depth_value, K_color, K_depth):
         self.listener.waitForTransform('/camera_depth_optical_frame', '/camera_color_optical_frame', rospy.Time(0), rospy.Duration(3.0))
@@ -167,81 +171,66 @@ class WeedDetectorRoot:
         return int(round(u_depth)), int(round(v_depth))
 
     def image_callback(self, msg):
-        if self.latest_depth is None:
-            rospy.logwarn("No depth data yet, skipping detection.")
-            return
+            if self.latest_depth is None:
+                rospy.logwarn("No depth data yet, skipping detection.")
+                return
 
-        cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
-        results = self.model(cv_image)
-        for r in results:
-            for box in r.boxes:
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                x1 = max(0, x1); y1 = max(0, y1)
-                x2 = min(cv_image.shape[1], x2); y2 = min(cv_image.shape[0], y2)
-                if x2 <= x1 or y2 <= y1:
-                    continue
-                
-                roi_depth = self.latest_depth[y1:y2, x1:x2].copy()
-                
-                d = self.latest_depth # this works  
-                #self.ransac(roi_depth, x1, y1, x2, y2) # This does not
-                if roi_depth.dtype != np.float32:
-                    roi_depth = roi_depth.astype(np.float32)
+            cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+            results = self.model(cv_image)
+            for r in results:
+                for box in r.boxes:
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    x1 = max(0, x1); y1 = max(0, y1)
+                    x2 = min(cv_image.shape[1], x2); y2 = min(cv_image.shape[0], y2)
+                    if x2 <= x1 or y2 <= y1:
+                        continue
+                    
+                    u = (x1 + x2) // 2 
+                    v = (y1 + y2) // 2 
 
-                
-                u = (x1 + x2) // 2 
-                v = (y1 + y2) // 2 
+                    depth_value = self.latest_depth[v, u]
+                    if depth_value > 10:
+                        depth_value /= 1000.0 
+                    if depth_value <= 0:
+                        rospy.logwarn("Invalid depth at weed centroid.")
+                        continue
 
-                depth_value = self.latest_depth[v, u]
-                if depth_value > 10:
-                    depth_value /= 1000.0 
-                if depth_value <= 0:
-                    rospy.logwarn("Invalid depth at weed centroid.")
-                    continue
+                    corners_color = [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]
+                    corners_depth = [self.color_pixel_to_depth_pixel(u, v, depth_value,
+                                                self.camera_matrix, self.camera_matrix_depth,)
+                                    for (u, v) in corners_color]
+                    
+                    us, vs = zip(*corners_depth)
+                    u_depth_min, u_depth_max = min(us), max(us)
+                    v_depth_min, v_depth_max = min(vs), max(vs)
+                    roi_depth_aligned = self.latest_depth[v_depth_min:v_depth_max, u_depth_min:u_depth_max].copy()
+                    x_base, y_base, z_base = self.ransac(roi_depth_aligned, u_depth_min, v_depth_min)
 
-                corners_color = [(x1, y1), (x2, y1), (x2, y2), (x1, y2)]
-                corners_depth = [self.color_pixel_to_depth_pixel(u, v, depth_value,
-                                             self.camera_matrix, self.camera_matrix_depth,)
-                                for (u, v) in corners_color]
-                
-                us, vs = zip(*corners_depth)
-                u_depth_min, u_depth_max = min(us), max(us)
-                v_depth_min, v_depth_max = min(vs), max(vs)
-                roi_depth_aligned = self.latest_depth[v_depth_min:v_depth_max, u_depth_min:u_depth_max].copy()
-                self.ransac(roi_depth_aligned, u_depth_min, v_depth_min)
+                    #X_cam, Y_cam, Z_cam = self.pixel_to_world(u, v, depth_value)
+                    #x_base, y_base, z_base = self.transform_camera_to_base(X_cam, Y_cam, Z_cam)
+                    if x_base is not None:
+                        rospy.loginfo("Weed root in Base Frame: X={:.3f}, Y={:.3f}, Z={:.3f}".format(x_base, y_base, z_base))
+                        weed_msg = PointStamped()
+                        weed_msg.header.stamp = rospy.Time.now()
+                        weed_msg.header.frame_id = "base_link"
+                        weed_msg.point.x = x_base
+                        weed_msg.point.y = y_base
+                        weed_msg.point.z = z_base
+                        self.weed_pub.publish(weed_msg)
 
-                X_cam, Y_cam, Z_cam = self.pixel_to_world(u, v, depth_value)
+                    cv2.rectangle(cv_image, (x1, y1), (x2, y2), (255, 0, 0), 2)
+                    cv2.circle(cv_image, (u, v), 4, (0, 0, 255), -1)
+                    text = "X:{:.2f} Y:{:.2f} Z:{:.2f}".format(x_base, y_base, z_base)
+                    cv2.putText(cv_image, text, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 2)
 
-                x_base, y_base, z_base = self.transform_camera_to_base(X_cam, Y_cam, Z_cam)
-                if x_base is not None:
-                    rospy.loginfo("Weed root in Base Frame: X={:.3f}, Y={:.3f}, Z={:.3f}".format(x_base, y_base, z_base))
-                    weed_msg = PointStamped()
-                    weed_msg.header.stamp = rospy.Time.now()
-                    weed_msg.header.frame_id = "world"
-                    weed_msg.point.x = x_base
-                    weed_msg.point.y = y_base
-                    weed_msg.point.z = z_base
-                    self.weed_pub.publish(weed_msg)
-
-                cv2.rectangle(cv_image, (x1, y1), (x2, y2), (255, 0, 0), 2)
-                cv2.circle(cv_image, (u, v), 4, (0, 0, 255), -1)
-                text = "X:{:.2f} Y:{:.2f} Z:{:.2f}".format(x_base, y_base, z_base)
-                cv2.putText(cv_image, text, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 0, 0), 2)
-
-                roi_depth_norm = cv2.normalize(roi_depth_aligned, None, 0, 255, cv2.NORM_MINMAX)
-                roi_depth_norm = roi_depth_norm.astype(np.uint8)
-
-
-            cv2.imshow("Weed Detection", cv_image)
-            cv2.imshow("roi", roi_depth_norm)
-            cv2.waitKey(1)
+                cv2.imshow("Weed Detection", cv_image)
+                cv2.waitKey(1)
 
     def run(self):
         rospy.spin()
 
+
 if __name__ == "__main__":
     node = WeedDetectorRoot()
-    #print(node.transform_camera_to_base( 0.15472,     0.39979,       0.572))
-    
     node.run()
-    # [    0.15472, -0.39979,  -0.572]
+  
