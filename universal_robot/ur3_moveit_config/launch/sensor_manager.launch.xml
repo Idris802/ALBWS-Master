@@ -4,6 +4,7 @@
 
   <!-- Params for the octomap monitor -->
   <!--  <param name="octomap_frame" type="string" value="some frame in which the robot moves" /> -->
+  <!--rosparam command="load" file="$(find ur3_moveit_config)/config/sensors_noetic_depthmap.yaml" /-->
   <param name="octomap_resolution" type="double" value="0.025" />
   <param name="max_range" type="double" value="5.0" />
 

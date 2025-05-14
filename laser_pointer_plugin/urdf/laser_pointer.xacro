@@ -1,29 +1,68 @@
 <?xml version="1.0"?>
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro">
-<xacro:macro name="laser_pointer" params="pointer_name parent_link">
-  <link name="${pointer_name}">
-    <visual>
+<xacro:macro name="laser_pointer" params="parent" >
+
+<link name="pointer_base">
+  <visual name="pointer_base_visual">
+    <origin xyz="0 0 0.025" rpy="0 0 0"/>
+    <geometry>
+      <cylinder radius="0.005" length="0.05"/>
+    </geometry>
+  </visual>
+  <collision name="pointer_base_collision">
+      <origin xyz="0 0 0.025" rpy="0 0 0"/>
       <geometry>
-        <!-- dummy shape so link is not empty -->
-        <box size="0.0001 0.0001 0.0001"/>
+        <cylinder radius="0.005" length="0.05"/>
       </geometry>
-      <origin xyz="0 0 0" rpy="0 0 0"/>
-    </visual>
-  </link>
+    </collision>
+  <inertial>
+    <mass value="0.1"/>
+    <inertia ixx="0.00002" iyy="0.000093" izz="0.000093" ixy="0" ixz="0" iyz="0"/>
+  </inertial>
+</link>
 
-  <joint name="${pointer_name}_joint" type="fixed">
-    <parent link="${parent_link}"/>
-    <child link="${pointer_name}"/>
-    <origin xyz="0 0 0" rpy="0 0 0"/>
-  </joint>
+<gazebo reference="pointer_base">
+  <material>Gazebo/Grey</material>
+</gazebo>
 
-  <gazebo>
-    <include>
-      <!-- Reference your local SDF path (assuming your package is found) -->
-      <uri>file://$(find laser_pointer_plugin)/models/laser_pointer.sdf</uri>
-      <name>${pointer_name}</name>
-      <pose>0 0 0 0 0 0</pose>
-    </include>
-  </gazebo>
-</xacro:macro>
+<joint name="laser_to_eef" type="fixed">
+  <parent link="${parent}"/>
+  <child link="pointer_base"/>
+  <origin xyz="0 0 0" rpy="0 0 0"/>
+</joint>
+
+<link name="laser_beam">
+  <visual name="laser_beam_visual">
+    <origin xyz="0 0 0.55" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.002" length="1.0"/>
+      </geometry>
+  </visual>
+  <inertial>
+    <mass value="0.01"/>
+    <inertia ixx="0.00002" iyy="0.000093" izz="0.000093" ixy="0" ixz="0" iyz="0"/>
+  </inertial>
+</link>
+
+<gazebo reference="laser_beam">
+  <visual reference="laser_beam_visual">
+    <transparency>1.0</transparency>
+  </visual>
+  <material>Gazebo/RedGlow</material>
+</gazebo>
+
+<joint name="beam_to_laser" type="fixed">
+  <parent link="pointer_base"/>
+  <child link="laser_beam"/>
+  <origin xyz="0 0 0" rpy="0 0 0"/>
+</joint>
+
+<gazebo>
+  <plugin name="laser_pointer_controller" filename="liblaser_pointer_plugin.so">
+    <laser_link_name>laser_beam</laser_link_name>
+    <topicName>/set_laser_pointer</topicName>
+  </plugin>
+</gazebo>
+
+
 </robot>

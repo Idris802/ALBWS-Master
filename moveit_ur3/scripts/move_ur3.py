@@ -13,13 +13,13 @@ import math
 import tf.transformations as tfm
 import geometry_msgs.msg
 import numpy as np
+import matplotlib.pyplot as plt
+
 from geometry_msgs.msg import PointStamped, PoseStamped
-
 from math import pi, tau, dist, fabs, cos
-
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool
 from moveit_commander.conversions import pose_to_list
-
+from sensor_msgs.msg import JointState
 
 moveit_commander.roscpp_initialize(sys.argv)
 rospy.init_node("move_group_ur3_interface", anonymous=True)
@@ -54,78 +54,13 @@ print("============ Printing robot state")
 print(robot.get_current_state())
 print("")
 
+laser_pub = rospy.Publisher("/set_laser_pointer", Bool, queue_size=10)
 
-print("Moving to Home position!")
+weed_positions = []
+subscriber = None
 
-
-current_pose_stamped = move_group.get_current_pose()
-
-
-home_position = [-0.08987249676046005, -1.513799495494775, -1.563427913618015, -1.6978510331504433, 1.5968145769242623, -0.08069322207556606]
-move_group.go(home_position, wait="true")
-move_group.stop()
-
-
-import numpy as np
-import tf.transformations as tfm
-import math
-
-
-def quaternion_from_vectors(v0, v1):
-    v0 = v0 / np.linalg.norm(v0)
-    v1 = v1 / np.linalg.norm(v1)
-    d = np.dot(v0, v1)
-    if d >= 1.0:
-        return np.array([0, 0, 0, 1])
-    if d <= -0.999999:
-        axis = np.cross(np.array([0, 0, 1]), v0)
-        if np.linalg.norm(axis) < 1e-6:
-            axis = np.cross(np.array([0, 1, 0]), v0)
-        axis = axis / np.linalg.norm(axis)
-        return tfm.quaternion_about_axis(math.pi, axis)
-    s = math.sqrt((1+d)*2)
-    invs = 1 / s
-    cross = np.cross(v0, v1)
-    q = np.array([cross[0]*invs, cross[1]*invs, cross[2]*invs, 0.5*s])
-    return q
-
-def reorient_end_effector(weed_coords):
-    current_pose = move_group.get_current_pose().pose
-    current_pos = np.array([current_pose.position.x, current_pose.position.y, current_pose.position.z])
-    
-    # Compute the direction vector from the current end-effector position to the weed
-    target_pos = np.array(weed_coords)
-    direction = target_pos - current_pos
-    norm = np.linalg.norm(direction)
-    if norm < 1e-6:
-        rospy.logwarn("Target coincides with current position; using default orientation.")
-        new_quat = np.array([0, 0, 0, 1])
-    else:
-        direction = direction / norm
-        # Default forward axis of the tool is assumed to be [1, 0, 0]
-        default_forward = np.array([0, 0, 1])
-        new_quat = quaternion_from_vectors(default_forward, direction)
-    
-    # Construct new end effector pose: keep current position, update orientation
-    new_pose = PoseStamped()
-    new_pose.header.frame_id = move_group.get_planning_frame()
-    new_pose.pose.position = current_pose.position
-    new_pose.pose.orientation.x = new_quat[0]
-    new_pose.pose.orientation.y = new_quat[1]
-    new_pose.pose.orientation.z = new_quat[2]
-    new_pose.pose.orientation.w = new_quat[3]
-
-    move_group.set_pose_target(new_pose.pose)
-    move_group.set_planning_time(10)
-    plan = move_group.go(wait=True)
-    move_group.stop()
-    move_group.clear_pose_targets()
-    
-    if plan:
-        rospy.loginfo("End effector reoriented successfully.")
-    else:
-        rospy.logwarn("End effector reorientation failed.")
-
+joint_state_times = []
+joint_state_positions = {}  
 
 def move_robot_to_target(x, y, z):
 
@@ -146,6 +81,7 @@ def move_robot_to_target(x, y, z):
     # Set pose target
     move_group.set_pose_target(target_pose)
     move_group.set_planning_time(50.0)
+
     # Plan and execute motion
     plan = move_group.go(wait=True)
     move_group.stop()
@@ -156,21 +92,74 @@ def move_robot_to_target(x, y, z):
     else:
         rospy.logwarn("Motion planning failed!")
 
+
 def weed_callback(msg):
+    global weed_positions, subscriber
     rospy.loginfo("Received weed coordinates: X = {:.3f}, Y = {:.3f}, Z = {:.3f}".format(msg.point.x, msg.point.y, msg.point.z))
     home_position = [-0.08987249676046005, -1.513799495494775, -1.563427913618015, -1.6978510331504433, 1.5968145769242623, -0.08069322207556606]
     move_group.go(home_position, wait="true")
     move_group.stop()
-    move_robot_to_target(msg.point.x, msg.point.y, 1.04)
+    if len(weed_positions) < 6:
+        weed_positions.append([msg.point.x, msg.point.y, msg.point.z])
+
+    if len(weed_positions) >= 6 and subscriber is not None:
+        subscriber.unregister()
+        rospy.loginfo("Collected 6 weed positions. Unsubscribing from /weed_coordinates.")
+        rospy.loginfo("Weed positions: {}".format(weed_positions))
+
+        for pos in weed_positions:
+            move_robot_to_target(pos[0], pos[1], 1.02)
+            #reorient_end_effector([pos[0], pos[1], pos[2]])
+            laser_pub.publish(Bool(data=True))
+            rospy.loginfo("Laser turned ON at weed position: {}".format(pos))
+            rospy.sleep(2.0)
+            laser_pub.publish(Bool(data=False))
+            rospy.loginfo("Laser turned OFF")
+            rospy.sleep(2.0) 
+
+def joint_state_callback(msg):
+    global joint_state_times, joint_state_positions
+    t = msg.header.stamp.to_sec()
+    joint_state_times.append(t)
+    for i, name in enumerate(msg.name):
+        if name not in joint_state_positions:
+            joint_state_positions[name] = []
+        joint_state_positions[name].append(msg.position[i])
+
+def plot_joint_states():
+    """
+    Plot joint positions over time using the collected joint state data.
+    """
+    # Find the minimum number of data points collected
+    min_length = len(joint_state_times)
+    for positions in joint_state_positions.values():
+        if len(positions) < min_length:
+            min_length = len(positions)
+    
+    if min_length == 0:
+        rospy.logwarn("No joint state data collected!")
+        return
+
+    # Normalize time data so that it starts at 0
+    times = np.array(joint_state_times[:min_length]) - joint_state_times[0]
+    
+    plt.figure(figsize=(10, 6))
+    for joint, positions in joint_state_positions.items():
+        plt.plot(times, positions[:min_length], label=joint)
+    
+    plt.xlabel("Time (s)")
+    plt.ylabel("Joint Position (rad)")
+    plt.title("Joint States Over Time (Simulated Annealing TSP)")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
 
 
 if __name__ == "__main__":
     moveit_commander.roscpp_initialize([])
-    # Example weed coordinates in the base frame
-    weed_coordinates = [-0.41, -0.11, 0.9]
-    #reorient_end_effector(weed_coordinates)
-    
-    #rospy.Subscriber("/weed_coordinates", PointStamped, weed_callback)
-    #rospy.spin()
+    home_position = [0, 0, 0, 0, 0, 0]
+    move_group.go(home_position, wait="true")
+    move_group.stop()
 
-    #move_robot_to_target(-0.51+0.07, 0.33, 1.04)
+    subscriber = rospy.Subscriber("/weed_coordinates", PointStamped, weed_callback)
+    rospy.spin()

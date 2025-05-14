@@ -2,10 +2,10 @@
 <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="$(arg robot_model)_robot">
   <!--
     This file wraps the original UR3 Gazebo model and attaches it to a cylindrical support,
-    so that the robot stands on a fixed base (like a table or pedestal).
+    so that the robot stands on a fixed base (like a table or pedestal). It also attches the Realsense 
+    D415 with respect to the base camera and laser pointer attached to the end effector.
   -->
 
-  <!-- Declare arguments (pass through to the original macro) -->
   <xacro:arg name="joint_limit_params" default=""/>
   <xacro:arg name="physical_params" default=""/>
   <xacro:arg name="kinematics_params" default=""/>
@@ -15,12 +15,9 @@
   <xacro:arg name="safety_pos_margin" default="0.15"/>
   <xacro:arg name="safety_k_position" default="20"/>
 
-  
-
-  <!-- Include the original UR3 Gazebo robot description -->
   <xacro:include filename="$(find ur_gazebo)/urdf/ur_macro.xacro"/>
   <xacro:include filename="$(find realsense2_description)/urdf/_d415.urdf.xacro"/>
-  <!-- Instantiate the UR3 robot for Gazebo -->
+
   <xacro:ur_robot_gazebo
       prefix=""
       joint_limits_parameters_file="$(arg joint_limit_params)"
@@ -33,7 +30,6 @@
       safety_k_position="$(arg safety_k_position)"
   />
 
-  <!-- Define a cylinder support link -->
   <link name="cylinder_support">
     <visual name="cylinder_support_visual">
       <origin xyz="0 0 0.5" rpy="0 0 0"/>
@@ -59,41 +55,37 @@
     </gazebo>
 
     
-  <!-- Define the world link -->
   <link name="world"/>
 
-  <!-- Attach the cylinder support to the world -->
   <joint name="world_to_cylinder" type="fixed">
     <parent link="world"/>
     <child link="cylinder_support"/>
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </joint>
 
-  <!-- Attach the robot's base to the cylinder support -->
   <joint name="cylinder_to_robot" type="fixed">
     <parent link="cylinder_support"/>
     <child link="base_link"/>
     <origin xyz="0 0 1" rpy="0 0 0"/>
   </joint>
 
-
   <xacro:include filename="$(find realsense2_description)/urdf/_d415.urdf.xacro" />
 
   <xacro:sensor_d415 name="camera" topics_ns="camera" parent="base_link" publish_pointcloud="true">
-    <origin xyz="-0.4 0 0.55" rpy="0 1.57 3.14"/>
+    <origin xyz="-0.4 0 0.5" rpy="0 1.57 3.14"/>
   </xacro:sensor_d415>
 
 <link name="pointer_base">
   <visual name="pointer_base_visual">
     <origin xyz="0 0 0.025" rpy="0 0 0"/>
     <geometry>
-      <cylinder radius="0.02" length="0.05"/>
+      <cylinder radius="0.005" length="0.05"/>
     </geometry>
   </visual>
   <collision name="pointer_base_collision">
       <origin xyz="0 0 0.025" rpy="0 0 0"/>
       <geometry>
-        <cylinder radius="0.02" length="0.05"/>
+        <cylinder radius="0.005" length="0.05"/>
       </geometry>
     </collision>
   <inertial>
@@ -114,9 +106,9 @@
 
 <link name="laser_beam">
   <visual name="laser_beam_visual">
-    <origin xyz="0 0 0.55" rpy="0 0 0"/>
+    <origin xyz="0 0 0.5" rpy="0 0 0"/>
       <geometry>
-        <cylinder radius="0.005" length="1.0"/>
+        <cylinder radius="0.002" length="1.0"/>
       </geometry>
   </visual>
   <inertial>
@@ -126,20 +118,17 @@
 </link>
 
 <gazebo reference="laser_beam">
-  <visual name="laser_beam_visual">
+  <visual reference="laser_beam_visual">
     <transparency>1.0</transparency>
   </visual>
   <material>Gazebo/RedGlow</material>
 </gazebo>
-
 
 <joint name="beam_to_laser" type="fixed">
   <parent link="pointer_base"/>
   <child link="laser_beam"/>
   <origin xyz="0 0 0" rpy="0 0 0"/>
 </joint>
-
-
 
 <gazebo>
   <plugin name="laser_pointer_controller" filename="liblaser_pointer_plugin.so">

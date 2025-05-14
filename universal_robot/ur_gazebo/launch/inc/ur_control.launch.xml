@@ -35,7 +35,7 @@
   <!-- Load controller settings -->
   <rosparam file="$(arg controller_config_file)" command="load"/>
 
-  <arg name="custom_world" value="$(find ur_gazebo)/worlds/simple_world.world"/>
+  <arg name="custom_world" value="$(find ur_gazebo)/worlds/level_1.world"/>
 
   <!-- Start Gazebo and load the empty world if requested to do so -->
   <include file="$(find gazebo_ros)/launch/empty_world.launch" if="$(arg start_gazebo)">
