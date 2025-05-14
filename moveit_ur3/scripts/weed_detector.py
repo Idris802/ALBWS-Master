@@ -209,12 +209,12 @@ class WeedDetectorRoot:
                     v_depth_min, v_depth_max = min(vs), max(vs)
 
                     # Comment out these lines to use Ransac with YOLO
-                    #roi_depth_aligned = self.latest_depth[v_depth_min:v_depth_max, u_depth_min:u_depth_max].copy()
-                    #x_base, y_base, z_base = self.ransac(roi_depth_aligned, u_depth_min, v_depth_min)
+                    roi_depth_aligned = self.latest_depth[v_depth_min:v_depth_max, u_depth_min:u_depth_max].copy()
+                    x_base, y_base, z_base = self.ransac(roi_depth_aligned, u_depth_min, v_depth_min)
 
                     # Comment these lines if you want to ransac with YOLO, otherwise use these only 
-                    X_cam, Y_cam, Z_cam = self.pixel_to_world(u, v, depth_value)
-                    x_base, y_base, z_base = self.transform_camera_to_base(X_cam, Y_cam, Z_cam)
+                    #X_cam, Y_cam, Z_cam = self.pixel_to_world(u, v, depth_value)
+                    #x_base, y_base, z_base = self.transform_camera_to_base(X_cam, Y_cam, Z_cam)
 
                     if x_base is not None:
                         rospy.loginfo("Weed root in Base Frame: X={:.3f}, Y={:.3f}, Z={:.3f}".format(x_base, y_base, z_base))
