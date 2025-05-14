@@ -89,6 +89,7 @@ def move_robot_to_target(x, y, z):
 
     if plan:
         rospy.loginfo(f"Robot moved to target (X={x}, Y={y}, Z={z}) successfully.")
+        laser_pub.publish(Bool(data=True))
     else:
         rospy.logwarn("Motion planning failed!")
 
@@ -109,8 +110,6 @@ def weed_callback(msg):
 
         for pos in weed_positions:
             move_robot_to_target(pos[0], pos[1], 1.02)
-            #reorient_end_effector([pos[0], pos[1], pos[2]])
-            laser_pub.publish(Bool(data=True))
             rospy.loginfo("Laser turned ON at weed position: {}".format(pos))
             rospy.sleep(2.0)
             laser_pub.publish(Bool(data=False))
