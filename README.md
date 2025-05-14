@@ -1,0 +1,42 @@
+# Repo for Master Thesis Project 
+
+This repository contains the source code for my Master’s thesis project at the Norwegian University of Life Sciences (NMBU). The thesis develops an autonomous laser-based weeding framework composed of four modules: machine vision, weed detection, motion planning, and laser actuation. A novel contribution is the fusion of YOLO with RANSAC to enhance weed-stem localization. To evaluate the framework, a Gazebo simulation was built featuring a UR3 arm with an attached laser pointer, an Intel RealSense camera, and virtual weed and crop models.
+
+## Quickstart
+
+Clone the repository and enter its directory:
+
+```bash
+git clone https://github.com/Idris802/ALBWS-Master.git
+cd ALBWS-Master
+````
+
+## Simulation & Execution
+
+1. **Launch the UR3 and environment in Gazebo**
+   Starts the UR3 robot, and spawns table, camera, weeds, and all other simulation components.
+
+   ```bash
+   roslaunch ur_gazebo ur3_bringup.launch
+   ```
+
+2. **Start MoveIt! in simulation mode**
+   Brings up MoveIt! planning and execution nodes configured for the UR3.
+
+   ```bash
+   roslaunch ur3_moveit_config moveit_planning_execution.launch sim:=true
+   ```
+
+3. **Run the weed detection node**
+   Begins real-time YOLO-based weed detection from the camera feed.
+
+   ```bash
+   rosrun moveit_ur3 weed_detector.py
+   ```
+
+4. **Execute the motion planner & laser weeding**
+   Commands the UR3 to navigate to each detected weed and activate the laser pointer.
+
+   ```bash
+   rosrun moveit_ur3 move_ur3.py
+   ```
