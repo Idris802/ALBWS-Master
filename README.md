@@ -46,7 +46,7 @@ This workspace includes:
 
 - **realsense2_description**  
   – URDF & Gazebo models for Intel RealSense cameras  
-  – Upstream: <https://github.com/IntelRealSense/realsense-ros/tree/development/realsense2_description>
+  – Upstream: <https://github.com/issaiass/realsense2_description>
 
 - **universal_robot**  
   – ROS drivers, Gazebo models, and MoveIt! configs for UR3/UR5/UR10  
