@@ -2,6 +2,7 @@
 
 This repository contains the source code for my Master’s thesis project at the Norwegian University of Life Sciences (NMBU). The thesis develops an autonomous laser-based weeding framework composed of four modules: machine vision, weed detection, motion planning, and laser actuation. A novel contribution is the fusion of YOLO with RANSAC to enhance weed-stem localization. To evaluate the framework, a Gazebo simulation was built featuring a UR3 arm with an attached laser pointer, an Intel RealSense camera, and virtual weed and crop models.
 
+
 ## Simulation & Execution
 
 1. **Launch the UR3 and environment in Gazebo**
