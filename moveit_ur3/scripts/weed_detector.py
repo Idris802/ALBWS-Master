@@ -9,6 +9,7 @@ import os
 import tf
 import tf.transformations as tfm
 import time
+import torch
 
 from sensor_msgs.msg import Image, CameraInfo
 from geometry_msgs.msg import PointStamped
@@ -35,16 +36,17 @@ class WeedDetectorRoot:
         self.camera_info_sub = rospy.Subscriber("/camera/color/camera_info", CameraInfo, self.camera_info_callback)
         self.caemera_info_depth_sub = rospy.Subscriber("/camera/depth/camera_info", CameraInfo, 
                                                         self.camera_info_depth_callback)
-        self.latest_depth = None
-        self.listener = tf.TransformListener()
 
         self.weed_pub = rospy.Publisher("/weed_coordinates", PointStamped, queue_size=10)
 
-        self.preprocess_times = []
-        self.inference_times = []
-        self.postprocess_times = []
-        self.num_weeds_list = []
-        self.average_interval = 500
+        self.latest_depth = None
+        self.listener = tf.TransformListener()
+
+        self.pre_times  = []
+        self.inf_times  = []
+        self.post_times = []
+        self.stats_every = 500 
+
 
     def camera_info_depth_callback(self, msg):
         """ Store camera intrinsics from /camera/color/camera_info. """
@@ -136,7 +138,7 @@ class WeedDetectorRoot:
         weed_points = np.asarray(weed_cloud.points)
         
         #o3d.visualization.draw_geometries([ground_plane, weed_cloud])
-
+        
         distances = np.abs(a * weed_points[:, 0] + b * weed_points[:, 1] +
                     c * weed_points[:, 2] + d_coeff)
 
@@ -151,6 +153,7 @@ class WeedDetectorRoot:
         sphere.paint_uniform_color([0.0, 0.0, 1.0])  
 
         #o3d.visualization.draw_geometries([weed_cloud, sphere])
+        #o3d.visualization.draw_geometries([ground_plane, sphere])
 
         return x_base, y_base, z_base
 
@@ -177,6 +180,7 @@ class WeedDetectorRoot:
 
             cv_image = self.bridge.imgmsg_to_cv2(msg, "bgr8")
             results = self.model(cv_image)
+
             for r in results:
                 for box in r.boxes:
                     x1, y1, x2, y2 = map(int, box.xyxy[0])
@@ -203,11 +207,15 @@ class WeedDetectorRoot:
                     us, vs = zip(*corners_depth)
                     u_depth_min, u_depth_max = min(us), max(us)
                     v_depth_min, v_depth_max = min(vs), max(vs)
-                    roi_depth_aligned = self.latest_depth[v_depth_min:v_depth_max, u_depth_min:u_depth_max].copy()
-                    x_base, y_base, z_base = self.ransac(roi_depth_aligned, u_depth_min, v_depth_min)
 
-                    #X_cam, Y_cam, Z_cam = self.pixel_to_world(u, v, depth_value)
-                    #x_base, y_base, z_base = self.transform_camera_to_base(X_cam, Y_cam, Z_cam)
+                    # Comment out these lines to use Ransac with YOLO
+                    #roi_depth_aligned = self.latest_depth[v_depth_min:v_depth_max, u_depth_min:u_depth_max].copy()
+                    #x_base, y_base, z_base = self.ransac(roi_depth_aligned, u_depth_min, v_depth_min)
+
+                    # Comment these lines if you want to ransac with YOLO, otherwise use these only 
+                    X_cam, Y_cam, Z_cam = self.pixel_to_world(u, v, depth_value)
+                    x_base, y_base, z_base = self.transform_camera_to_base(X_cam, Y_cam, Z_cam)
+
                     if x_base is not None:
                         rospy.loginfo("Weed root in Base Frame: X={:.3f}, Y={:.3f}, Z={:.3f}".format(x_base, y_base, z_base))
                         weed_msg = PointStamped()

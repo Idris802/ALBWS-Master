@@ -65,6 +65,7 @@
       <child>laser_beam</child>
     </joint>
 
+
     <!-- Include the laser pointer plugin -->
     <plugin name="laser_pointer_controller" filename="liblaser_pointer_plugin.so">
       <!-- Tell the plugin which link to treat as the laser beam -->

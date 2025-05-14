@@ -62,63 +62,6 @@ subscriber = None
 joint_state_times = []
 joint_state_positions = {}  
 
-def quaternion_from_vectors(v0, v1):
-    v0 = v0 / np.linalg.norm(v0)
-    v1 = v1 / np.linalg.norm(v1)
-    d = np.dot(v0, v1)
-    if d >= 1.0:
-        return np.array([0, 0, 0, 1])
-    if d <= -0.999999:
-        axis = np.cross(np.array([0, 0, 1]), v0)
-        if np.linalg.norm(axis) < 1e-6:
-            axis = np.cross(np.array([0, 1, 0]), v0)
-        axis = axis / np.linalg.norm(axis)
-        return tfm.quaternion_about_axis(math.pi, axis)
-    s = math.sqrt((1+d)*2)
-    invs = 1 / s
-    cross = np.cross(v0, v1)
-    q = np.array([cross[0]*invs, cross[1]*invs, cross[2]*invs, 0.5*s])
-    return q
-
-def reorient_end_effector(weed_coords):
-    current_pose = move_group.get_current_pose().pose
-    current_pos = np.array([current_pose.position.x, current_pose.position.y, current_pose.position.z])
-    
-    # Compute the direction vector from the current end-effector position to the weed
-    target_pos = np.array(weed_coords)
-    direction = target_pos - current_pos
-    norm = np.linalg.norm(direction)
-    if norm < 1e-6:
-        rospy.logwarn("Target coincides with current position; using default orientation.")
-        new_quat = np.array([0, 0, 0, 1])
-    else:
-        direction = direction / norm
-        # Default forward axis of the tool is assumed to be [1, 0, 0]
-        default_forward = np.array([0, 0, 1])
-        new_quat = quaternion_from_vectors(default_forward, direction)
-    
-    # Construct new end effector pose: keep current position, update orientation
-    new_pose = PoseStamped()
-    new_pose.header.frame_id = move_group.get_planning_frame()
-    new_pose.pose.position = current_pose.position
-    new_pose.pose.orientation.x = new_quat[0]
-    new_pose.pose.orientation.y = new_quat[1]
-    new_pose.pose.orientation.z = new_quat[2]
-    new_pose.pose.orientation.w = new_quat[3]
-
-    move_group.set_pose_target(new_pose.pose)
-    move_group.set_planning_time(10)
-    plan = move_group.go(wait=True)
-    move_group.stop()
-    move_group.clear_pose_targets()
-    
-    if plan:
-        rospy.loginfo("End effector reoriented successfully.")
-    else:
-        rospy.logwarn("End effector reorientation failed.")
-
-
-
 def move_robot_to_target(x, y, z):
 
     # Define the target pose
@@ -215,37 +158,8 @@ def plot_joint_states():
 if __name__ == "__main__":
     moveit_commander.roscpp_initialize([])
     home_position = [0, 0, 0, 0, 0, 0]
-    #move_group.go(home_position, wait="true")
-    #move_group.stop()
-
-    home_position = [-0.08987249676046005, -1.513799495494775, -1.563427913618015, -1.6978510331504433, 1.5968145769242623, -0.08069322207556606]
     move_group.go(home_position, wait="true")
     move_group.stop()
-    rospy.sleep(4.0)
 
-    # -0.45, -0.10
-    #move_robot_to_target(-0.3314335730153157, -0.011890768755567932, 1.04)
-    #laser_pub.publish(Bool(data=True))
-
-    ransac_l = [(-0.3738729799137606, -0.29980112826021416), (-0.2473369637210849, -0.17858211467646673), (-0.3343023651160801, -0.009476697317997872), (-0.29961311623030135, 0.21202017955604452), (-0.44859124935707373, 0.17697553961075976), (-0.45812922704991776, -0.14543003269053853)]
-
-    joint_state_sub = rospy.Subscriber("/joint_states", JointState, joint_state_callback)
-    
-    for tp in ransac_l:
-        x, y = tp
-        move_robot_to_target(x, y, 1.02)
-        laser_pub.publish(Bool(data=True))
-        rospy.loginfo("Laser turned ON at weed position: {}".format(tp))
-        rospy.sleep(0.2)
-        laser_pub.publish(Bool(data=False))
-        rospy.loginfo("Laser turned OFF")
-        #rospy.sleep(.5)
-    
-
-    joint_state_sub.unregister()
-    plot_joint_states()
-   
-    #subscriber = rospy.Subscriber("/weed_coordinates", PointStamped, weed_callback)
-    #rospy.spin()
-
-    
+    subscriber = rospy.Subscriber("/weed_coordinates", PointStamped, weed_callback)
+    rospy.spin()
