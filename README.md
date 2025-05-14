@@ -40,3 +40,25 @@ cd ALBWS-Master
    ```bash
    rosrun moveit_ur3 move_ur3.py
    ```
+## Dependencies
+
+This workspace includes:
+
+- **realsense2_description**  
+  – URDF & Gazebo models for Intel RealSense cameras  
+  – Upstream: <https://github.com/IntelRealSense/realsense-ros/tree/development/realsense2_description>
+
+- **universal_robot**  
+  – ROS drivers, Gazebo models, and MoveIt! configs for UR3/UR5/UR10  
+  – Upstream: <https://github.com/ros-industrial/universal_robot>
+
+- **virtual_maize_field**  
+  – Custom Gazebo world containing maize, weeds, and terrain models  
+  – Upstream: <https://github.com/Idris802/virtual_maize_field>
+
+- **realsense_gazebo_plugin**  
+  – Gazebo plugin for RealSense depth & RGB streams  
+  – Upstream: <https://github.com/pal-robotics/realsense_gazebo_plugin>
+
+
+
