@@ -46,7 +46,7 @@ This workspace includes:
 
 - **virtual_maize_field**  
   – Custom Gazebo world containing maize, weeds, and terrain models  
-  – Link: <https://github.com/Idris802/virtual_maize_field>
+  – Link: <https://github.com/FieldRobotEvent/virtual_maize_field>
 
 - **realsense_gazebo_plugin**  
   – Gazebo plugin for RealSense depth & RGB streams  
